@@ -70,7 +70,9 @@ def test_gdacs_flatten_and_convert(tmp_path):
 
 
 def test_ingest_cli_dry_run(capsys):
-    import ingest
+    # ingest.py (Workshop 1 CLI) lives in the repository root, which is not mounted in
+    # the Airflow containers; there the test is skipped instead of failing.
+    ingest = pytest.importorskip("ingest")
     assert ingest.main(["--mode", "incremental", "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "ibtracs_active" in out and "gdacs_tc_current" in out

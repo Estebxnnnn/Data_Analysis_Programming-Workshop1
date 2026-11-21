@@ -9,8 +9,10 @@ Steps, in order:
  3. nulls       reject rows without time/position; coalesce, derive or flag the rest
  4. text        normalize storm names (case, accents, punctuation, GDACS prefix/suffix)
  5. outliers    physical-range check (value -> NULL + flag) and IQR / z-score flags
+                against climatological fences (Workshop 3; reference_stats.json)
  6. dedup       within the batch (event_id) and across batches (event_id + record_hash)
  7. schema      enforce the Silver schema and write Parquet with lineage metadata
+                (no file when the batch has no new or changed record - Workshop 3)
 """
 from __future__ import annotations
 
@@ -219,22 +221,69 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         _flag(df, out, f"{col}_out_of_range")
         df.loc[out, col] = np.nan
 
-    # --- outliers 2: statistical flags within the batch (values are kept)
+    # --- outliers 2: statistical flags against the climatology (values are kept)
+    # Workshop 2 computed the IQR of wind_kt inside each batch: in the 17 Nov 01:00 batch it
+    # flagged every CEMPAKA fix above 70 kt (a real typhoon peak) and in the 22:00 batch none,
+    # because the fences moved with the storms present. The fences now come from the
+    # 1980-2025 IBTrACS reference (reference_stats.json) and the wind rule looks at the
+    # 6-hourly intensity CHANGE of a storm, not at its level.
+    fences = outlier_fences(df)
+    dw = wind_change_6h(df)
     df["wind_iqr_outlier"] = False
-    w = df["wind_kt"].dropna()
-    if len(w) >= 8:
-        q1, q3 = w.quantile([0.25, 0.75])
-        iqr = q3 - q1
-        df["wind_iqr_outlier"] = df["wind_kt"].notna() & ~df["wind_kt"].between(q1 - 1.5 * iqr, q3 + 1.5 * iqr)
     df["speed_zscore_outlier"] = False
-    s = df["storm_speed_kt"].dropna()
-    if len(s) >= 8 and s.std(ddof=0) > 0:
-        z = (df["storm_speed_kt"] - s.mean()) / s.std(ddof=0)
+    if fences.get("dwind6_lo") is not None:
+        df["wind_iqr_outlier"] = dw.notna() & ~dw.between(fences["dwind6_lo"], fences["dwind6_hi"])
+    if fences.get("speed_std"):
+        z = (df["storm_speed_kt"] - fences["speed_mean"]) / fences["speed_std"]
         df["speed_zscore_outlier"] = z.abs() > 3
+    df.attrs["outlier_fences"] = fences
 
     # --- SSHS category only from 1-minute winds
     df.loc[df["wind_avg_period"] != "1-min", "sshs_category"] = None
     return df, rejected
+
+
+# ==================================================================== outliers
+IQR_K = 3.0          # Tukey "far out" fence on intensity changes
+MIN_FENCE_N = 30     # minimum sample to compute a fence from the batch itself
+
+
+def wind_change_6h(df: pd.DataFrame) -> pd.Series:
+    """Intensity change of each IBTrACS fix with respect to the previous fix of the same
+    storm, scaled to kt per 6 h (gaps above 12 h are ignored)."""
+    out = pd.Series(np.nan, index=df.index, dtype="float64")
+    fixes = df[(df["event_type"] == "tc_track_fix") & df["wind_kt"].notna()].sort_values(["storm_id", "timestamp_utc"])
+    if fixes.empty:
+        return out
+    hours = fixes.groupby("storm_id")["timestamp_utc"].diff().dt.total_seconds() / 3600
+    dw = fixes.groupby("storm_id")["wind_kt"].diff()
+    rate = (dw / hours * 6).where((hours > 0) & (hours <= 12))
+    out.loc[rate.index] = rate
+    return out
+
+
+def reference_stats() -> dict | None:
+    return paths.read_json(paths.reference_dir() / "reference_stats.json")
+
+
+def outlier_fences(df: pd.DataFrame) -> dict:
+    """Fences from the historical reference; if it is not built yet, from the batch itself
+    (recorded in the lineage as basis='batch' so the weaker rule stays visible)."""
+    ref = reference_stats()
+    if ref and ref.get("dwind6_q1") is not None:
+        q1, q3 = ref["dwind6_q1"], ref["dwind6_q3"]
+        return {"basis": "reference", "dwind6_lo": q1 - IQR_K * (q3 - q1), "dwind6_hi": q3 + IQR_K * (q3 - q1),
+                "speed_mean": ref["speed_mean"], "speed_std": ref["speed_std"],
+                "reference_built_at_utc": ref.get("built_at_utc")}
+    fences: dict = {"basis": "batch"}
+    dw = wind_change_6h(df).dropna()
+    if len(dw) >= MIN_FENCE_N:
+        q1, q3 = dw.quantile([0.25, 0.75])
+        fences.update(dwind6_lo=float(q1 - IQR_K * (q3 - q1)), dwind6_hi=float(q3 + IQR_K * (q3 - q1)))
+    sp = df["storm_speed_kt"].dropna()
+    if len(sp) >= MIN_FENCE_N and sp.std(ddof=0) > 0:
+        fences.update(speed_mean=float(sp.mean()), speed_std=float(sp.std(ddof=0)))
+    return fences
 
 
 # ======================================================================= dedup
@@ -335,16 +384,23 @@ def process(bronze_names: list[str], silver_ts: str) -> dict:
     deduped = deduped.assign(silver_run_ts=silver_ts, processed_at_utc=now)
     final = enforce_schema(deduped)
 
-    lineage = {"silver_file": out_path.name, "silver_run_ts": silver_ts, "bronze_files": bronze_names,
-               "rows": len(final), "rejected": len(rejected), "dedup": stats,
+    lineage = {"silver_file": out_path.name if len(final) else None, "silver_run_ts": silver_ts,
+               "bronze_files": bronze_names, "rows": len(final), "rejected": len(rejected), "dedup": stats,
+               "outlier_fences": cleaned.attrs.get("outlier_fences") if len(raw) else None,
                "processed_at_utc": now.isoformat(timespec="seconds")}
-    write_parquet(final, out_path, lineage)
+    if len(final):
+        write_parquet(final, out_path, lineage)
+    else:
+        # Workshop 2 wrote a 0-row Parquet file for every batch without changes (3 of 6
+        # files on 17 Nov). The run is now only recorded in the manifest.
+        out_path.unlink(missing_ok=True)
+        log.info("Silver run %s: no new or changed records; no Parquet file written", silver_ts)
     if len(rejected):
         paths.atomic_write_json(paths.rejected_file(silver_ts), json.loads(rejected.to_json(orient="records", date_format="iso")))
     manifest = paths.silver_dir() / "_manifest.jsonl"
     lines = [l for l in (manifest.read_text(encoding="utf-8").splitlines() if manifest.exists() else [])
-             if l.strip() and json.loads(l).get("silver_file") != out_path.name]   # re-run replaces its own line
+             if l.strip() and json.loads(l).get("silver_run_ts") != silver_ts]   # re-run replaces its own line
     lines.append(json.dumps(lineage, default=str))
     paths.atomic_write_bytes(manifest, ("\n".join(lines) + "\n").encode("utf-8"))
-    log.info("Silver file written: %s %s", out_path.name, lineage)
+    log.info("Silver run recorded: %s", lineage)
     return lineage

@@ -1,0 +1,51 @@
+                       0.3s
+ ✔ Container tc-monitor-airflow-triggerer-1 Created                                                                                0.3s
+ - Container tc-monitor-airflow-init-1      Waiting                                                                                2.4s
+[+] up 4/5
+ ✔ Container tc-monitor-postgres-1          Healthy                                                                 0.4s
+ ✔ Container tc-monitor-airflow-webserver-1 Created                                                                 0.3s
+ ✔ Container tc-monitor-airflow-scheduler-1 Created                                                                 0.3s
+ ✔ Container tc-monitor-airflow-triggerer-1 Created                                                                 0.3s
+ - Container tc-monitor-airflow-init-1      Waiting                                                                 3.4s
+[+] up 5/5
+ ✔ Container tc-monitor-postgres-1          Healthy                                                     0.4s
+ ✔ Container tc-monitor-airflow-webserver-1 Started                                                    29.8s
+ ✔ Container tc-monitor-airflow-scheduler-1 Started                                                    30.2s
+ ✔ Container tc-monitor-airflow-triggerer-1 Started                                                    30.8s
+ ✔ Container tc-monitor-airflow-init-1      Exited                                                     28.7s
+
+C:\proyectos\tc-monitor>docker compose ps
+NAME                             IMAGE                  COMMAND                  SERVICE             CREATED          STATUS                             PORTS
+tc-monitor-airflow-scheduler-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-scheduler   56 seconds ago   Up 26 seconds (health: starting)   8080/tcp
+tc-monitor-airflow-triggerer-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-triggerer   56 seconds ago   Up 25 seconds (healthy)            8080/tcp
+tc-monitor-airflow-webserver-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-webserver   56 seconds ago   Up 26 seconds (health: starting)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+tc-monitor-postgres-1            postgres:16-alpine     "docker-entrypoint.s…"   postgres            4 minutes ago    Up 2 minutes (healthy)             5432/tcp
+
+C:\proyectos\tc-monitor>docker compose ps
+NAME                             IMAGE                  COMMAND                  SERVICE             CREATED         STATUS                        PORTS
+tc-monitor-airflow-scheduler-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-scheduler   2 minutes ago   Up About a minute (healthy)   8080/tcp
+tc-monitor-airflow-triggerer-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-triggerer   2 minutes ago   Up About a minute (healthy)   8080/tcp
+tc-monitor-airflow-webserver-1   tcmon-airflow:2.10.5   "/usr/bin/dumb-init …"   airflow-webserver   2 minutes ago   Up About a minute (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+tc-monitor-postgres-1            postgres:16-alpine     "docker-entrypoint.s…"   postgres            5 minutes ago   Up 3 minutes (healthy)        5432/tcp
+
+C:\proyectos\tc-monitor>docker compose exec airflow-scheduler java -version
+docker compose exec airflow-scheduler python -c "import pyspark; print(pyspark.__version__)"
+docker compose exec airflow-scheduler python -m pytest -q /opt/airflow/testsopenjdk version "17.0.21.1" 2026-11-17
+OpenJDK Runtime Environment (build 17.0.21.1+2-1-deb12u1-Debian)
+OpenJDK 64-Bit Server VM (build 17.0.21.1+2-1-deb12u1-Debian, mixed mode, sharing)
+
+C:\proyectos\tc-monitor>docker compose exec airflow-scheduler python -c "import pyspark; print(pyspark.__version__)"
+3.5.4
+
+C:\proyectos\tc-monitor>docker compose exec airflow-scheduler python -m pytest -q /opt/airflow/tests
+.........s....................................                                                       [100%]
+============================================= warnings summary =============================================
+tests/test_gold_spark.py::test_spark_reads_silver_folder_and_skips_underscore_paths
+tests/test_workshop3.py::test_analog_twin_ranks_the_shifted_copy_first
+  /opt/airflow/tests/test_workshop3.py:132: FutureWarning: The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+    ref = pd.concat(parts, ignore_index=True)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+45 passed, 1 skipped, 2 warnings in 201.44s (0:03:21)
+
+C:\proyectos\tc-monitor>

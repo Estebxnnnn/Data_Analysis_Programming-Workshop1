@@ -4,6 +4,7 @@ requests          # HTTP extraction (GDACS API, IBTrACS file)
 pandas            # Silver preprocessing
 numpy
 pyarrow           # Parquet writing/reading and explicit Silver schema
+pyspark           # Gold layer (Workshop 3), local mode; needs the JRE installed in the Dockerfile
 PyYAML            # config/sources.yaml
 python-dotenv
 pytest            # pipeline tests inside the container

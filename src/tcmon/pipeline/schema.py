@@ -53,8 +53,8 @@ SILVER_SCHEMA: list[Field] = [
     Field("gdacs_episode_id", "int64", False, "GDACS episode number"),
     Field("date_modified_utc", "timestamp", False, "GDACS datemodified (UTC)"),
     # quality flags
-    Field("wind_iqr_outlier", "bool", True, "wind_kt outside [Q1 - 1.5 IQR, Q3 + 1.5 IQR] of the batch (flag only)"),
-    Field("speed_zscore_outlier", "bool", True, "|z| > 3 for storm_speed_kt within the batch (flag only)"),
+    Field("wind_iqr_outlier", "bool", True, "6-hourly wind change outside [Q1 - 3 IQR, Q3 + 3 IQR] of the 1980-2025 reference (flag only; batch IQR of wind_kt until Workshop 2)"),
+    Field("speed_zscore_outlier", "bool", True, "|z| > 3 for storm_speed_kt against the reference mean and SD (flag only; batch z-score until Workshop 2)"),
     Field("qc_flags", "string", True, "Semicolon-separated quality notes; empty string when none"),
     # deduplication and lineage
     Field("record_hash", "string", True, "SHA-256 of the business columns, used for cross-batch deduplication"),

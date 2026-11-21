@@ -6,15 +6,17 @@ persists every run as raw JSON in `datalake_bronze/`:
 
 | Task | What it does |
 | --- | --- |
-| `run_timestamp` | Run timestamp (UTC) from the logical date, used in every file name |
+| `run_timestamp` | Run timestamp (UTC): end of the data interval for scheduled runs, trigger time for manual runs |
 | `extract_api_gdacs` | GDACS event API (REST/GeoJSON), tropical cyclones of the last 7 days, all pages |
-| `extract_file_ibtracs` | IBTrACS v04r01 ACTIVE subset (CSV file over HTTPS) |
+| `extract_file_ibtracs` | IBTrACS v04r01 ACTIVE subset (CSV file over HTTPS), conditional GET with stored ETag/Last-Modified |
 | `validate_*` | Basic schema check; an invalid batch is never persisted |
-| `persist_*` | `gdacs_tc_YYYYMMDD_HHMMSS.json`, `ibtracs_active_YYYYMMDD_HHMMSS.json` |
+| `persist_*` | `gdacs_tc_YYYYMMDD_HHMMSS.json`, `ibtracs_active_YYYYMMDD_HHMMSS.json` (IBTrACS only when the file changed) |
 | `signal_silver` | Writes `_pending/bronze_run_YYYYMMDD_HHMMSS.json` LAST; the Silver FileSensor watches it |
 
 Schedule: hourly (GDACS polling period of the Workshop 1 ingestion contract).
-Idempotency: file names come from the logical date, so re-running a run rewrites its own files.
+Idempotency: file names come from the run timestamp, so re-running a run rewrites its own files.
+Every extraction attempt is logged in `datalake_bronze/_state/ingestion_log_<source>.jsonl`
+(input of the Gold governance KPIs).
 """
 from __future__ import annotations
 
@@ -57,13 +59,15 @@ def bronze_ingestion():
 
     @task
     def run_timestamp() -> str:
-        ts = paths.ts_string(get_current_context()["logical_date"])
-        log.info("Bronze run timestamp: %s", ts)
+        ctx = get_current_context()
+        ts = paths.ts_string(paths.run_moment(ctx))
+        log.info("Bronze run timestamp: %s (run type %s, logical date %s)", ts,
+                 ctx["dag_run"].run_type, ctx["logical_date"])
         return ts
 
     @task
     def extract_api_gdacs(run_ts: str) -> dict:
-        day = get_current_context()["logical_date"].date()
+        day = paths.run_moment(get_current_context()).date()
         try:
             return bronze.extract_gdacs(run_ts, day)
         except Exception:
@@ -100,7 +104,7 @@ def bronze_ingestion():
         and the run is then marked failed so the problem stays visible."""
         written = sorted(p.name for p in paths.bronze_dir().glob(f"*_{run_ts}.json"))
         manifest = bronze.signal_silver(run_ts, written)
-        expected = {f"{bronze.GDACS_SOURCE}_{run_ts}.json", f"{bronze.IBTRACS_SOURCE}_{run_ts}.json"}
+        expected = bronze.expected_files(run_ts)       # IBTrACS is not expected when it was not modified
         if set(written) != expected:
             raise AirflowException(f"Incomplete Bronze run {run_ts}: written={written}")
         return manifest

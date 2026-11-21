@@ -1,0 +1,16 @@
+{
+  "url": "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC&fromdate=2026-11-10&todate=2026-11-17&alertlevel=green%3Borange%3Bred&pagenumber=1",
+  "status": 400,
+  "requested_at_utc": "2026-11-18T00:00:04Z",
+  "elapsed_s": 38.011,
+  "headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": "138",
+    "Date": "Wed, 18 Nov 2026 00:00:41 GMT"
+  },
+  "size_bytes": 138,
+  "sha256": null,
+  "not_modified": false,
+  "path": "datalake_bronze/_staging/gdacs_tc_20261117_230000_p01.json.http400",
+  "meta_path": "datalake_bronze/_staging/gdacs_tc_20261117_230000_p01.json.http400.meta.json"
+}

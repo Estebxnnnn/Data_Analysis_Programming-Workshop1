@@ -32,43 +32,57 @@ Full details, licenses and attribution: [`config/sources.yaml`](config/sources.y
 IBTrACS v04r01, NOAA NCEI, doi:10.25921/82ty-9e16. GDACS: Global Disaster Alert and Coordination System, a cooperation
 framework of the UN and the European Commission. NHC: NOAA National Hurricane Center.
 
-## Pipeline status (Workshop 2)
-Medallion data lake orchestrated by **Apache Airflow 2.10.5** in Docker Compose:
+## Pipeline (Workshops 2–3)
+Medallion data lake orchestrated by **Apache Airflow 2.10.5** in Docker Compose (LocalExecutor, PostgreSQL metadata DB):
 
 | Layer | Folder | Produced by | Format |
 | --- | --- | --- | --- |
-| Bronze | `datalake_bronze/` | `bronze_ingestion` DAG (hourly): GDACS API + IBTrACS ACTIVE file | raw JSON, `<source>_YYYYMMDD_HHMMSS.json` |
-| Silver | `datalake_silver/` | `silver_processing` DAG (FileSensor on Bronze) | Parquet, `tropical_cyclones_YYYYMMDD_HHMMSS.parquet` |
-| Gold | `datalake_gold/` | Workshop 3 (PySpark) | planned |
+| Bronze | `datalake_bronze/` | `bronze_ingestion` DAG (hourly, minute 0): GDACS API (7-day window) + IBTrACS ACTIVE file (conditional GET) | raw JSON, `<source>_YYYYMMDD_HHMMSS.json` |
+| Silver | `datalake_silver/` | `silver_processing` DAG (every 15 min, FileSensor on Bronze): Pandas cleaning, dedup, schema | Parquet, `tropical_cyclones_YYYYMMDD_HHMMSS.parquet` |
+| Gold | `datalake_gold/` | `gold_processing` DAG (hourly, minute 40): **PySpark local mode** over `datalake_silver/` | Parquet, `governance_YYYYMMDD_HHMMSS.parquet`, `storytelling_YYYYMMDD_HHMMSS.parquet` |
 
-Run it: see [`workshop_2/README.md`](workshop_2/README.md) (`docker compose build`, `docker compose up airflow-init`,
-`docker compose up -d`, then <http://localhost:8080>, user/password `airflow`).
+* **Governance** — over 100 KPI values per run on completeness, uniqueness, validity, conformity, timeliness,
+  consistency, efficiency and volume, each with target and status.
+* **Storytelling** — every current storm, its **top-5 historical analogs** from IBTrACS since 1980 (Storm Analog
+  Similarity), what those analogs did in the next 72 h, alerts, source comparison, basin climatology and a narrative.
+  Analogs describe resemblance; they are not a forecast.
+
+```bat
+docker compose build airflow-init
+docker compose up airflow-init
+docker compose up -d
+```
+Airflow UI: <http://localhost:8080> (`airflow` / `airflow`). Unpause the three DAGs. **Trigger Gold manually:**
+UI → `gold_processing` → ▶ *Trigger DAG*, or `docker compose exec airflow-scheduler airflow dags trigger gold_processing`.
+Details: [`workshop_2/README.md`](workshop_2/README.md) (stack) and [`workshop_3/README.md`](workshop_3/README.md) (Gold).
 
 ## Repository structure
 ```
 .
 ├── docker-compose.yml        # Airflow (webserver, scheduler, triggerer) + PostgreSQL metadata DB
 ├── airflow/                  # Dockerfile, requirements-airflow.txt, dags/, logs/, plugins/
-├── datalake_bronze/          # raw JSON per source and run (+ _pending/_claimed run manifests)
-├── datalake_silver/          # Parquet per Silver run (+ _manifest.jsonl, _rejected/)
-├── datalake_gold/            # Workshop 3
+├── datalake_bronze/          # raw JSON per source and run (+ _pending/_claimed manifests, _state/, _errors/)
+├── datalake_silver/          # Parquet per Silver run (+ _manifest.jsonl, _rejected/, _reference/ 1980- baseline)
+├── datalake_gold/            # governance_*.parquet and storytelling_*.parquet (PySpark)
 ├── ingest.py                 # CLI entry point (stub): --mode historical | incremental
 ├── config/sources.yaml       # one entry per source: URL, format, schedule, watermark, license
 ├── src/tcmon/                # ingestion package
 │   ├── http_client.py        # polite client: UA, throttling, retries, conditional GET, raw + .meta.json
 │   ├── sources/              # ibtracs.py, gdacs.py, nhc.py
 │   ├── normalization/        # units.py, canonical.py (canonical event model)
-│   ├── pipeline/             # bronze.py, silver.py, schema.py, paths.py (Workshop 2)
+│   ├── pipeline/             # bronze.py, silver.py, schema.py, paths.py, reference.py
+│   ├── gold/                 # spark.py, inventory.py, governance.py, analogs.py, storytelling.py (Workshop 3)
 │   └── storage/              # landing zone paths (DB writer in Workshop 2)
 ├── data/raw/                 # raw landing zone (git-ignored)
 ├── sql/001_schema_draft.sql  # schema draft (common + domain tables)
 ├── dashboard/app.py          # Plotly Dash stub (localhost:8050)
 ├── tests/                    # pytest; tests/fixtures/ = recorded responses
-├── notebooks/01_source_profiling.ipynb
+├── notebooks/                # 01 source profiling, 02 Silver, 03 data-quality findings, 04 Gold preview
 ├── docs/architecture.md      # architecture overview + diagram
 ├── docs/report/              # Workshop 1 report: IEEE-format PDF + LaTeX source
 ├── workshop_1/               # mapping, ER diagram, ingestion contract, samples, evidence, tools
 ├── workshop_2/               # report, preprocessing specification, evidence
+├── workshop_3/               # report, data-quality findings, Gold specification, evidence
 ├── .env.example
 └── requirements.txt
 ```
@@ -90,6 +104,6 @@ python dashboard/app.py                  # http://localhost:8050 (stub)
 | Workshop | Scope | Status |
 | --- | --- | --- |
 | 1 | Hazard definition, four sources validated, profiling, canonical mapping, ingestion contract, project definition | done — evidence captured 14 Nov 2026 (`workshop_1/evidence/`) |
-| 2 | Docker + Airflow stack, Bronze ingestion DAG, Silver preprocessing DAG with FileSensor | in progress |
-| 3 | Incremental ingestion, watermarks, scheduling, change detection, cross-source event identification | planned |
+| 2 | Docker + Airflow stack, Bronze ingestion DAG, Silver preprocessing DAG with FileSensor | done |
+| 3 | Pipeline improvements from real findings, PySpark Gold layer, governance KPIs, storytelling with historical analogs | done (branch `workshop-3`) |
 | 4 | Temporal and geographic analysis, SAS indicator, dashboard | planned |

@@ -1,0 +1,27 @@
+{
+ "built_at_utc": "2026-11-19T23:22:22+00:00",
+ "rows": 312416,
+ "storms": 5019,
+ "seasons": [
+  1980,
+  2027
+ ],
+ "dwind6_n": 132850,
+ "dwind6_q1": 0.0,
+ "dwind6_median": 0.0,
+ "dwind6_q3": 5.0,
+ "dwind6_p005": -20.0,
+ "dwind6_p995": 20.0,
+ "speed_n": 300432,
+ "speed_mean": 10.018024045374661,
+ "speed_std": 6.6670201648589416,
+ "speed_p999": 53.0,
+ "source_state": {
+  "etag": "\"8aa4f45-660761e440a71\"",
+  "last_modified": "Tue, 17 Nov 2026 10:11:30 GMT",
+  "sha256": "d99fb38f6922d76e0f9245f93145d3a3f90ee3fc486aa128cce2ce23b51553b6",
+  "size_bytes": 145379141,
+  "elapsed_s": 13.511,
+  "downloaded_at_utc": "2026-11-19T23:22:00+00:00"
+ }
+}

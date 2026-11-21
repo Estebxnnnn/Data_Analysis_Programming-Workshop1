@@ -27,3 +27,9 @@ airflow/logs/*
 !airflow/logs/.gitkeep
 datalake_bronze/_staging/*
 !datalake_bronze/_staging/.gitkeep
+
+# Workshop 3: historical reference (rebuilt by the Gold DAG; reference_stats.json is kept)
+datalake_bronze/_reference/*
+!datalake_bronze/_reference/.gitkeep
+datalake_silver/_reference/*.parquet
+datalake_gold/_tmp_*/

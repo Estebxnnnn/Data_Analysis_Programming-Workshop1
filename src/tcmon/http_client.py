@@ -1,7 +1,9 @@
 """Polite HTTP client.
 
 * descriptive User-Agent (from TCMON_USER_AGENT)
-* throttling between requests and exponential back-off on 429/5xx
+* throttling between requests and exponential back-off on 429/5xx, and on the
+  HTTP 400 "Execution Timeout Expired" answer that the GDACS API returns when its
+  database query times out (observed on 18 Nov 2026 00:00 UTC, Workshop 3)
 * conditional GET (If-None-Match / If-Modified-Since)
 * every response body is saved UNMODIFIED, with a sidecar ``.meta.json``
   (URL, UTC request time, status, headers, size, SHA-256) - this is the
@@ -19,6 +21,9 @@ from pathlib import Path
 import requests
 
 from .config import REPO_ROOT, user_agent
+
+# Bodies of 4xx answers that are transient server-side failures, not client errors.
+TRANSIENT_400_MARKERS = (b"execution timeout", b"timeout expired", b"timed out")
 
 _EVIDENCE_HEADERS = (
     "Content-Type", "Content-Length", "Last-Modified", "ETag", "Date",
@@ -89,8 +94,22 @@ class PoliteClient:
                 retry_after = resp.headers.get("Retry-After")
                 time.sleep(float(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt)
                 continue
+            if resp.status_code == 400 and attempt < self.max_retries and self.is_transient_400(resp):
+                time.sleep(2 ** (attempt + 2))           # 4 s, 8 s, 16 s: give the database time to recover
+                continue
             return resp
         return resp  # pragma: no cover
+
+    @staticmethod
+    def is_transient_400(resp: requests.Response) -> bool:
+        """True when a 400 answer is really a server-side timeout (GDACS)."""
+        try:
+            if int(resp.headers.get("Content-Length", "0") or 0) > 4096:
+                return False
+            body = resp.content.lower()             # small body; requests keeps it for iter_content
+        except (ValueError, requests.RequestException):
+            return False
+        return any(m in body for m in TRANSIENT_400_MARKERS)
 
     def fetch_to_file(self, url: str, dest: str | Path, params: dict | None = None,
                       etag: str | None = None, last_modified: str | None = None) -> FetchResult:

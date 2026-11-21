@@ -117,4 +117,7 @@ def test_parquet_roundtrip_and_idempotency(lake):
     _bronze_run(RUN2)
     out2 = silver.process(silver.bronze_files_of(silver.claim_batch(RUN2)), RUN2)
     assert out2["rows"] == 0 and out2["dedup"]["cross_batch_duplicates"] == 142
-    assert pd.read_parquet(paths.silver_file(RUN2)).empty
+    # Workshop 3: a batch without changes writes no Parquet file, only a manifest line
+    assert out2["silver_file"] is None and not paths.silver_file(RUN2).exists()
+    lines = (paths.silver_dir() / "_manifest.jsonl").read_text().splitlines()
+    assert [json.loads(l)["silver_run_ts"] for l in lines] == [RUN1, RUN2]

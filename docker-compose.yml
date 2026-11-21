@@ -37,6 +37,10 @@ x-airflow-common: &airflow-common
     TCMON_DATALAKE_ROOT: /opt/airflow
     TCMON_USER_AGENT: ${TCMON_USER_AGENT:-TC-Analog-Monitor/0.2 (Universidad Distrital, Team 4)}
     PYTHONPATH: /opt/airflow/src
+    # Gold layer (Workshop 3): PySpark in local mode inside the task process
+    TCMON_SPARK_MASTER: "local[2]"
+    TCMON_SPARK_DRIVER_MEMORY: 2g
+    TCMON_GOLD_RETENTION_DAYS: "14"
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
